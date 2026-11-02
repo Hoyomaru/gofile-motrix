@@ -60,7 +60,7 @@ GoFile 側の仕様変更などで動かなくなったときは、画面右下�
 
 ## ライセンスと出典
 
-MIT ライセンスです（[LICENSE](LICENSE)）。次の 2 つのプロジェクト（いずれも MIT）を元にしています。
+MIT ライセンスです（[LICENSE](LICENSE)）。次の 2 つのプロジェクト（いずれも MIT）を元にしています。元プロジェクトの著作権表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) にあります。
 
 - [gofile-dl](https://github.com/martadams89/gofile-dl)：ファイル一覧の取得・名前の整形・送信済み管理の考え方
 - [GoFile Enhanced](https://github.com/ewigl/gofile-enhanced)：GoFile のページへの UI 追加の手法
