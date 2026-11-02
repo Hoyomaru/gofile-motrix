@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GoFile → Motrix
 // @namespace    gofile-motrix
-// @version      0.2.0
+// @version      0.2.1
 // @description  GoFile のページにツールバーを追加し、フォルダ構造を保ったままファイルを Motrix (aria2 RPC) へ送る。gofile-dl の取得処理と gofile-enhanced の UI を土台にしたもの。
 // @author       Hoyomaru
 // @license      MIT
@@ -92,7 +92,7 @@
     stripPrefix: { label: 'フォルダ名の接頭辞を除去（⭐NEW FILES in など）', def: true },
     customPrefixes: { label: '追加で除去する接頭辞（| 区切り）', def: '', hint: '例: [UPDATE] |【新着】' },
     stripEmoji: { label: '絵文字を除去', def: false },
-    retentionDays: { label: '送信済み記録の保持日数（0 で無期限）', def: '365', hint: 'これより古い記録は自動で消える' },
+    retentionDays: { label: '送信済み記録の保持日数（0 で無期限）', def: '7', hint: 'これより古い記録は自動で消える' },
   };
 
   const cfg = {
