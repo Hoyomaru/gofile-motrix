@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GoFile → Motrix
 // @namespace    gofile-motrix
-// @version      0.2.2
+// @version      0.3.0
 // @description  GoFile のページにツールバーを追加し、フォルダ構造を保ったままファイルを Motrix (aria2 RPC) へ送る。gofile-dl の取得処理と gofile-enhanced の UI を土台にしたもの。
 // @author       Hoyomaru
 // @license      MIT
@@ -427,7 +427,18 @@
             { label: 'OK', variant: 'primary', onClick: (h) => { const v = document.getElementById('gm-pwd')?.value ?? ''; h.close(); resolve(v); } },
           ],
         });
-        setTimeout(() => document.getElementById('gm-pwd')?.focus(), 50);
+        setTimeout(() => {
+          const input = document.getElementById('gm-pwd');
+          input?.focus();
+          // Enter で OK ボタンを押したのと同じにする
+          input?.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter' || ev.isComposing) return;
+            ev.preventDefault();
+            const ok = [...(input.closest('[role="dialog"], .popup, dialog') ?? document).querySelectorAll('button')]
+              .find((b) => b.textContent.trim() === 'OK');
+            ok?.click();
+          });
+        }, 50);
       });
     }
 
@@ -579,7 +590,7 @@
           const checked = !st || BADGE[st][2];
           const path = [...f.segs, f.name].map(escapeHtml).join('<span class="text-slate-500"> / </span>');
           return `
-            <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/30">
+            <label data-gm-row class="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/30">
               <input type="checkbox" data-gm-file="${i}" ${checked ? 'checked' : ''} class="size-4 shrink-0">
               <span class="min-w-0 flex-1 break-all text-sm text-slate-300">${path}</span>
               ${f.renamed ? badge('名前変更', 'text-sky-300 ring-sky-500/40', `元の名前: ${f.rawName}`) : ''}
@@ -611,6 +622,8 @@
               ${counts.failed ? `<div class="mt-1 text-red-300">前回 Motrix で失敗した ${counts.failed} 件は再送信の対象にしています。</div>` : ''}
             </div>
             ${skippedHtml}
+            <input type="search" data-gm-filter class="input mb-1.5 text-sm" autocomplete="off"
+                   placeholder="名前やフォルダで絞り込む（スペース区切りで AND）">
             <div class="mb-1.5 flex items-center justify-between rounded-xl bg-slate-900/40 px-2 py-2 text-sm text-slate-300">
               <label class="flex cursor-pointer items-center gap-2"><input type="checkbox" data-gm-all class="size-4"> すべて選択</label>
               <span data-gm-summary class="font-mono text-xs text-slate-400"></span>
@@ -635,14 +648,29 @@
           const all = document.querySelector('[data-gm-all]');
           const boxes = [...document.querySelectorAll('[data-gm-file]')];
           const summary = document.querySelector('[data-gm-summary]');
+          const filter = document.querySelector('[data-gm-filter]');
+          const rowOf = (b) => b.closest('[data-gm-row]');
+          const haystack = boxes.map((b) => {
+            const f = sorted[Number(b.dataset.gmFile)];
+            return [...f.segs, f.name].join('/').toLowerCase();
+          });
+          const visible = () => boxes.filter((b) => rowOf(b).style.display !== 'none');
           const sync = () => {
             const checked = boxes.filter((b) => b.checked);
             const size = checked.reduce((s, b) => s + (sorted[Number(b.dataset.gmFile)].size || 0), 0);
-            if (all) all.checked = checked.length === boxes.length;
-            if (summary) summary.textContent = `${checked.length} / ${boxes.length} 件 ・ ${formatSize(size) || '0 B'}`;
+            const shown = visible();
+            // 「すべて選択」は表示中の項目だけを対象にする
+            if (all) all.checked = shown.length > 0 && shown.every((b) => b.checked);
+            const filtered = shown.length !== boxes.length ? `（表示 ${shown.length}）` : '';
+            if (summary) summary.textContent = `${checked.length} / ${boxes.length} 件${filtered} ・ ${formatSize(size) || '0 B'}`;
           };
           all?.addEventListener('change', () => {
-            boxes.forEach((b) => (b.checked = all.checked));
+            visible().forEach((b) => (b.checked = all.checked));
+            sync();
+          });
+          filter?.addEventListener('input', () => {
+            const words = filter.value.toLowerCase().split(/\s+/).filter(Boolean);
+            boxes.forEach((b, i) => (rowOf(b).style.display = words.every((w) => haystack[i].includes(w)) ? '' : 'none'));
             sync();
           });
           boxes.forEach((b) => b.addEventListener('change', sync));
