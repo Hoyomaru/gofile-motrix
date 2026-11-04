@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GoFile → Motrix
 // @namespace    gofile-motrix
-// @version      0.2.1
+// @version      0.2.2
 // @description  GoFile のページにツールバーを追加し、フォルダ構造を保ったままファイルを Motrix (aria2 RPC) へ送る。gofile-dl の取得処理と gofile-enhanced の UI を土台にしたもの。
 // @author       Hoyomaru
 // @license      MIT
@@ -30,6 +30,7 @@
   const BANNER_ID = 'gm-motrix-banner';
   const FORM_ID = 'gm-motrix-settings';
   const PAGE_SIZE = 1000;
+  const SEND_CHUNK = 100; // Motrix へ 1 回に送る件数
   const DAY = 86400000;
 
   // ---------------------------------------------------------------------------
@@ -521,27 +522,39 @@
         'allow-overwrite': 'false',
         pause: cfg.get('autoStart') ? 'false' : 'true',
       });
-      // JSON-RPC のバッチで一括送信
-      const batch = files.map((f, i) => ({
-        jsonrpc: '2.0',
-        id: `gm${i}`,
-        method: 'aria2.addUri',
-        params: [`token:${cfg.get('rpcSecret')}`, [f.link], options(f)],
-      }));
-      const res = await gmPost(cfg.get('rpcUrl'), batch);
-      if (!res.ok || !Array.isArray(res.json)) {
-        const msg = res.json?.error?.message ?? `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
-      const byId = new Map(res.json.map((r) => [r.id, r]));
+      // JSON-RPC のバッチで SEND_CHUNK 件ずつ送る。一度に送るとタイムアウトしやすく、
+      // Motrix 側では追加済みなのに記録されず、次回また送ってしまうことがあるため。
+      // 送れた分はその都度記録し、途中で通信に失敗したら残りは送らずに止める。
       const ok = [];
       const ng = [];
-      files.forEach((f, i) => {
-        const r = byId.get(`gm${i}`);
-        if (r && !r.error) ok.push({ ...f, gid: r.result });
-        else ng.push({ f, err: r?.error?.message ?? '応答なし' });
-      });
-      history.add(ok);
+      for (let start = 0; start < files.length; start += SEND_CHUNK) {
+        const chunk = files.slice(start, start + SEND_CHUNK);
+        const batch = chunk.map((f, i) => ({
+          jsonrpc: '2.0',
+          id: `gm${start + i}`,
+          method: 'aria2.addUri',
+          params: [`token:${cfg.get('rpcSecret')}`, [f.link], options(f)],
+        }));
+        let res;
+        try {
+          res = await gmPost(cfg.get('rpcUrl'), batch);
+          if (!res.ok || !Array.isArray(res.json)) throw new Error(res.json?.error?.message ?? `HTTP ${res.status}`);
+        } catch (e) {
+          if (!ok.length && !ng.length) throw e; // 1 件も送れていなければ、全体の失敗として扱う
+          const rest = files.slice(start);
+          ng.push(...rest.map((f) => ({ f, err: `未送信（${e.message}）` })));
+          break;
+        }
+        const byId = new Map(res.json.map((r) => [r.id, r]));
+        const sent = [];
+        chunk.forEach((f, i) => {
+          const r = byId.get(`gm${start + i}`);
+          if (r && !r.error) sent.push({ ...f, gid: r.result });
+          else ng.push({ f, err: r?.error?.message ?? '応答なし' });
+        });
+        history.add(sent);
+        ok.push(...sent);
+      }
       return { ok, ng };
     }
 
@@ -655,7 +668,13 @@
         return openSettings();
       }
 
-      const { files, skipped } = await collect(gather);
+      let files, skipped;
+      try {
+        ({ files, skipped } = await collect(gather));
+      } catch (e) {
+        console.error(LOG, e);
+        return toast(`ファイル一覧を取得できませんでした: ${e?.message || e}`, { type: 'error' });
+      }
       if (!files.length) {
         return toast(skipped.length ? `取得できたファイルがありません（失敗 ${skipped.length} 件）` : 'ファイルがありません', { type: 'warning' });
       }
